@@ -1,4 +1,3 @@
-
 name: Build Budgie iOS IPA
 
 on:
@@ -68,11 +67,13 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build 2>&1 | tee build-log.txt
 
-          echo "===== EXPO MODULES JSI ERRORS ====="
-          grep -n -B 30 -A 30 -i "ExpoModulesJSI" build-log.txt || true
+          echo ""
+          echo "========== LAST ERRORS =========="
+          grep -in -E -B 5 -A 10 "error:|fatal error:|failed|failure|No such file|not found" build-log.txt | tail -n 150 || true
 
-          echo "===== BUILD ERRORS ====="
-          grep -n -B 10 -A 15 "error:" build-log.txt || true
+          echo ""
+          echo "========== EXPO MODULES JSI =========="
+          grep -in -B 10 -A 20 "ExpoModulesJSI" build-log.txt | tail -n 150 || true
 
       - name: Upload build log
         if: always()
