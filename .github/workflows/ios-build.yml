@@ -1,0 +1,94 @@
+
+name: Build Budgie iOS IPA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-ios:
+    name: Build unsigned iOS IPA
+    runs-on: macos-15
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12.16.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.2
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prebuild iOS project
+        working-directory: packages/app
+        env:
+          APP_VARIANT: production
+          EXPO_PUBLIC_AI_DISABLE: "false"
+          EXPO_NO_TELEMETRY: "1"
+        run: pnpm exec expo prebuild --platform ios --clean
+
+      - name: Install CocoaPods
+        working-directory: packages/app/ios
+        run: pod install
+
+      - name: Build iOS app
+        working-directory: packages/app
+        env:
+          APP_VARIANT: production
+          EXPO_PUBLIC_AI_DISABLE: "false"
+          EXPO_NO_TELEMETRY: "1"
+        run: |
+          set -o pipefail
+          WORKSPACE=$(find ios -maxdepth 1 -name "*.xcworkspace" -print -quit)
+          if [ -z "$WORKSPACE" ]; then
+            echo "Xcode workspace not found"
+            exit 1
+          fi
+
+          xcodebuild \
+            -workspace "$WORKSPACE" \
+            -scheme budgie \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package unsigned IPA
+        working-directory: packages/app
+        run: |
+          set -e
+          APP=$(find build/DerivedData/Build/Products/Release-iphoneos \
+            -maxdepth 1 -name "*.app" \
+            -type d \
+            -print -quit)
+
+          if [ -z "$APP" ]; then
+            echo "Built .app not found"
+            exit 1
+          fi
+
+          mkdir -p build/Payload
+          cp -R "$APP" build/Payload/
+          cd build
+          zip -qry budgie-unsigned.ipa Payload
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: budgie-unsigned-ipa
+          path: packages/app/build/budgie-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7
