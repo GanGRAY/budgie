@@ -1,3 +1,4 @@
+
 name: Build Budgie iOS IPA
 
 on:
@@ -42,6 +43,29 @@ jobs:
         working-directory: packages/app/ios
         run: pod install
 
+      - name: Diagnose ExpoModulesJSI
+        working-directory: packages/app
+        run: |
+          echo "========== EXPO MODULES JSI SCRIPT =========="
+
+          SCRIPT=$(find build/DerivedData/Build/Intermediates.noindex/Pods.build \
+            -path "*/ExpoModulesJSI.build/Script-*.sh" \
+            -print -quit)
+
+          if [ -z "$SCRIPT" ]; then
+            echo "ExpoModulesJSI script not found"
+            exit 1
+          fi
+
+          echo "SCRIPT PATH: $SCRIPT"
+          echo "========== SCRIPT CONTENT =========="
+          cat "$SCRIPT"
+
+          echo "========== SCRIPT EXECUTION =========="
+          bash -x "$SCRIPT" 2>&1 | tee build/expo-jsi-diagnostic.txt
+
+          echo "========== DIAGNOSTIC EXIT CODE: ${PIPESTATUS[0]} =========="
+
       - name: Build iOS app
         working-directory: packages/app
         env:
@@ -49,7 +73,7 @@ jobs:
           EXPO_PUBLIC_AI_DISABLE: "false"
           EXPO_NO_TELEMETRY: "1"
         run: |
-          set -o pipefail
+          set +e
 
           WORKSPACE=$(find ios -maxdepth 1 -name "*.xcworkspace" -print -quit)
 
@@ -67,20 +91,23 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build 2>&1 | tee build-log.txt
 
-          echo ""
+          BUILD_STATUS=${PIPESTATUS[0]}
+
+          echo "========== BUILD EXIT CODE: $BUILD_STATUS =========="
           echo "========== LAST ERRORS =========="
-          grep -in -E -B 5 -A 10 "error:|fatal error:|failed|failure|No such file|not found" build-log.txt | tail -n 150 || true
+          grep -in -E -B 8 -A 15 "error:|fatal error:|failed|failure|No such file|not found" build-log.txt | tail -n 200 || true
+          tail -n 200 build-log.txt
 
-          echo ""
-          echo "========== EXPO MODULES JSI =========="
-          grep -in -B 10 -A 20 "ExpoModulesJSI" build-log.txt | tail -n 150 || true
+          exit "$BUILD_STATUS"
 
-      - name: Upload build log
+      - name: Upload diagnostic logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: budgie-build-log
-          path: packages/app/build-log.txt
+          name: budgie-build-diagnostics
+          path: |
+            packages/app/build-log.txt
+            packages/app/build/expo-jsi-diagnostic.txt
           if-no-files-found: warn
           retention-days: 7
 
