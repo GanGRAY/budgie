@@ -74,6 +74,15 @@ jobs:
           echo "===== BUILD ERRORS ====="
           grep -n -B 10 -A 15 "error:" build-log.txt || true
 
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: budgie-build-log
+          path: packages/app/build-log.txt
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Package unsigned IPA
         working-directory: packages/app
         run: |
